@@ -512,7 +512,6 @@ const playbackState = {
     context: null,
     gain: null,
     sources: [],
-    noiseBuffer: null,
     active: false,
     stopAt: 0,
     status: "idle"
@@ -1478,74 +1477,73 @@ function stopPlayback(userInitiated) {
 }
 
 function scheduleCallSegment(ctx, outputGain, segment, startTime) {
-    const duration = Math.max(0.12, segment.duration || 0.28);
-    const amplitude = Math.max(0.05, segment.amplitude ?? 0.7);
-    const baseFreq = Math.max(100, segment.baseFreq ?? 600);
-    const freqSlide = segment.freqSlide ?? -140;
-    const noiseLevel = Math.max(0, segment.noise ?? 0.3);
-
-    const filter = ctx.createBiquadFilter();
-    filter.type = "bandpass";
-    filter.frequency.setValueAtTime(baseFreq, startTime);
-    filter.Q.setValueAtTime(segment.q ?? 4.2, startTime);
-
-    const callGain = ctx.createGain();
-    callGain.gain.setValueAtTime(0.0001, startTime);
-    callGain.gain.linearRampToValueAtTime(amplitude, startTime + 0.03);
-    callGain.gain.setValueAtTime(amplitude * 0.82, startTime + duration * 0.4);
-    callGain.gain.exponentialRampToValueAtTime(0.0001, startTime + duration);
-
-    filter.connect(callGain);
-    callGain.connect(outputGain);
-
-    const osc = ctx.createOscillator();
-    osc.type = "square";
-    osc.frequency.setValueAtTime(baseFreq, startTime);
-    osc.frequency.linearRampToValueAtTime(baseFreq + freqSlide, startTime + duration);
-    osc.connect(filter);
-
-    const osc2 = ctx.createOscillator();
-    osc2.type = "sawtooth";
-    osc2.frequency.setValueAtTime(baseFreq * 0.5, startTime);
-    osc2.frequency.linearRampToValueAtTime((baseFreq + freqSlide) * 0.5, startTime + duration);
-    const osc2Gain = ctx.createGain();
-    osc2Gain.gain.value = 0.35;
-    osc2.connect(osc2Gain);
-    osc2Gain.connect(filter);
-
-    const noiseBuffer = ensureNoiseBuffer(ctx);
-    const noiseSource = ctx.createBufferSource();
-    noiseSource.buffer = noiseBuffer;
-    noiseSource.loop = true;
-    const noiseGain = ctx.createGain();
-    noiseGain.gain.setValueAtTime(noiseLevel, startTime);
-    noiseGain.gain.exponentialRampToValueAtTime(0.0001, startTime + duration);
-    noiseSource.connect(noiseGain);
-    noiseGain.connect(filter);
-
-    const stopTime = startTime + duration + 0.05;
-    osc.start(startTime);
-    osc.stop(stopTime);
-    osc2.start(startTime);
-    osc2.stop(stopTime);
-    noiseSource.start(startTime);
-    noiseSource.stop(stopTime);
-
-    playbackState.sources.push(osc, osc2, noiseSource);
-
-    return startTime + duration;
+    const buffer = createCrowCallBuffer(ctx, segment);
+    const source = ctx.createBufferSource();
+    source.buffer = buffer;
+    source.connect(outputGain);
+    source.start(startTime);
+    source.stop(startTime + buffer.duration);
+    playbackState.sources.push(source);
+    return startTime + buffer.duration;
 }
 
-function ensureNoiseBuffer(ctx) {
-    if (playbackState.noiseBuffer && playbackState.noiseBuffer.sampleRate === ctx.sampleRate) {
-        return playbackState.noiseBuffer;
+
+function createCrowCallBuffer(ctx, segment) {
+    const sampleRate = ctx.sampleRate;
+    const duration = Math.max(0.14, segment.duration || 0.32);
+    const length = Math.max(1, Math.floor(sampleRate * duration));
+    const data = new Float32Array(length);
+    const baseFreq = Math.max(140, segment.baseFreq ?? 620);
+    const freqSlide = segment.freqSlide ?? -180;
+    const noiseLevel = Math.max(0, segment.noise ?? 0.35);
+    const rasp = segment.rasp ?? 0.28;
+    const vibrato = segment.vibrato ?? 18;
+    const glottalFreq = segment.glottal ?? 90;
+
+    let mainPhase = 0;
+    let altPhase = 0;
+    let formantPhase = 0;
+    let glottalPhase = 0;
+    let dc = 0;
+
+    for (let i = 0; i < length; i += 1) {
+        const t = i / sampleRate;
+        const progress = t / duration;
+        const attack = Math.pow(Math.min(1, progress / 0.18), 1.6);
+        const release = Math.pow(Math.max(0, 1 - progress), 1.05);
+        const envelope = attack * release;
+
+        const freq = baseFreq + freqSlide * progress + vibrato * Math.sin(progress * Math.PI * 5);
+        const increment = (2 * Math.PI * freq) / sampleRate;
+        mainPhase += increment;
+        altPhase += increment * 1.97;
+        formantPhase += increment * 2.65;
+        glottalPhase += (2 * Math.PI * (glottalFreq + 22 * Math.sin(progress * Math.PI * 3))) / sampleRate;
+
+        const carrier = Math.sin(mainPhase) * 0.65 + Math.sin(altPhase + 0.3) * 0.32 + Math.sin(formantPhase + 1.1) * 0.22;
+        const raspComponent = Math.sin(mainPhase * 0.52 + progress * 9.2) * rasp;
+        const glottal = (Math.sin(glottalPhase) + 1) * 0.5;
+        const noise = (Math.random() * 2 - 1) * noiseLevel * (0.45 + 0.55 * glottal);
+        const sample = (carrier + raspComponent + noise) * envelope;
+
+        dc = sample + 0.995 * dc;
+        data[i] = sample - dc;
     }
-    const buffer = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate);
-    const data = buffer.getChannelData(0);
-    for (let i = 0; i < data.length; i += 1) {
-        data[i] = Math.random() * 2 - 1;
+
+    let peak = 0;
+    for (let i = 0; i < length; i += 1) {
+        const abs = Math.abs(data[i]);
+        if (abs > peak) peak = abs;
     }
-    playbackState.noiseBuffer = buffer;
+    if (peak > 0.98) {
+        const norm = 0.98 / peak;
+        for (let i = 0; i < length; i += 1) {
+            data[i] *= norm;
+        }
+    }
+
+    const buffer = ctx.createBuffer(1, length, sampleRate);
+    buffer.copyToChannel(data, 0);
     return buffer;
 }
 
