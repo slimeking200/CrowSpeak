@@ -1,0 +1,210 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Crow Call Translator</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <main class="shell">
+        <header class="hero">
+            <div class="hero-text">
+                <h1>Crow Call Translator Pro</h1>
+                <p class="tagline">Real-time decoding of American crow vocal behavior with adaptive analytics, expert context, and narrated translations.</p>
+                <div class="primary-actions">
+                    <button id="toggle-listen" class="btn primary">Start Analyzing</button>
+                    <button id="calibrate" class="btn ghost">Calibrate Ambient Noise</button>
+                    <span class="status-badge" id="status" role="status" aria-live="polite">Microphone idle</span>
+                </div>
+                <div class="control-strip">
+                    <label class="control">
+                        <span class="label">Voice</span>
+                        <select id="voice-select" aria-label="Speech synthesis voice"></select>
+                    </label>
+                    <label class="control toggle">
+                        <span class="label">Auto speak results</span>
+                        <input type="checkbox" id="auto-speak" checked>
+                        <span class="slider"></span>
+                    </label>
+                    <label class="control toggle">
+                        <span class="label">Verbose narration</span>
+                        <input type="checkbox" id="verbose-tts">
+                        <span class="slider"></span>
+                    </label>
+                    <label class="control toggle">
+                        <span class="label">Auto-scroll log</span>
+                        <input type="checkbox" id="auto-scroll" checked>
+                        <span class="slider"></span>
+                    </label>
+                </div>
+            </div>
+            <aside class="monitor-card">
+                <h2>Live Monitor</h2>
+                <div class="meter" id="level-meter" aria-hidden="true">
+                    <div class="bar"></div>
+                    <div class="tickmarks">
+                        <span>-60 dB</span>
+                        <span>-30 dB</span>
+                        <span>-10 dB</span>
+                    </div>
+                </div>
+                <dl class="monitor-readout">
+                    <div class="row">
+                        <dt>Ambient baseline</dt>
+                        <dd id="ambient-level">--</dd>
+                    </div>
+                    <div class="row">
+                        <dt>Bursts / minute</dt>
+                        <dd id="burst-rate">0</dd>
+                    </div>
+                    <div class="row">
+                        <dt>Session totals</dt>
+                        <dd><span id="total-bursts">0</span> bursts &bull; <span id="session-duration">0:00</span> elapsed</dd>
+                    </div>
+                    <div class="row">
+                        <dt>Last interpretation</dt>
+                        <dd id="last-interpretation">--</dd>
+                    </div>
+                </dl>
+                <div class="calibration" id="calibration-indicator" hidden>
+                    <span class="dot"></span>
+                    <span>Calibrating… hold quiet for <span id="calibration-timer">4.0</span> s</span>
+                </div>
+            </aside>
+        </header>
+
+        <section class="grid">
+            <article class="panel">
+                <header class="panel-header">
+                    <h2>Recent Interpretations</h2>
+                    <div class="panel-actions">
+                        <button id="download-log" class="btn ghost small">Download log</button>
+                        <button id="clear-log" class="btn ghost small">Clear</button>
+                    </div>
+                </header>
+                <div id="translation-log" class="log" role="log" aria-live="polite"></div>
+            </article>
+
+            <article class="panel">
+                <header class="panel-header">
+                    <h2>Session Analytics</h2>
+                </header>
+                <div class="analytics">
+                    <div class="stat">
+                        <span class="stat-label">Confidence threshold</span>
+                        <span class="stat-value" id="confidence-display">45%</span>
+                    </div>
+                    <div class="stat">
+                        <span class="stat-label">Ambient RMS</span>
+                        <span class="stat-value" id="ambient-rms">--</span>
+                    </div>
+                    <div class="stat">
+                        <span class="stat-label">Median burst spacing</span>
+                        <span class="stat-value" id="median-spacing">--</span>
+                    </div>
+                </div>
+                <table class="category-table" id="category-stats" aria-describedby="session-stats-caption">
+                    <caption id="session-stats-caption">Classification counts &amp; last-seen timestamps</caption>
+                    <thead>
+                        <tr>
+                            <th scope="col">Category</th>
+                            <th scope="col">Count</th>
+                            <th scope="col">Last detected</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </article>
+        </section>
+
+        <section class="panel wide">
+            <header class="panel-header">
+                <h2>Advanced Settings</h2>
+            </header>
+            <div class="settings-grid">
+                <label class="range-control">
+                    <span>Sensitivity</span>
+                    <input type="range" min="0" max="100" value="50" id="sensitivity">
+                    <span class="range-value" id="sensitivity-label">Neutral</span>
+                </label>
+                <label class="range-control">
+                    <span>Confidence filter</span>
+                    <input type="range" min="20" max="90" value="45" id="confidence">
+                    <span class="range-value" id="confidence-label">45%</span>
+                </label>
+                <label class="range-control">
+                    <span>Announcement cooldown (s)</span>
+                    <input type="range" min="2" max="10" value="5" id="cooldown">
+                    <span class="range-value" id="cooldown-label">5 s</span>
+                </label>
+            </div>
+            <p class="hint">Lower sensitivity reduces false positives in noisy environments. Raise the confidence filter to report only the clearest matches.</p>
+        </section>
+
+        <section class="panel wide playback-panel">
+            <header class="panel-header">
+                <h2>Crow Dialogue Studio</h2>
+                <div class="panel-actions">
+                    <span id="playback-status" class="status-chip idle">Idle</span>
+                </div>
+            </header>
+            <div class="playback-grid">
+                <label class="control full">
+                    <span class="label">Broadcast preset</span>
+                    <select id="playback-preset" aria-label="Crow call preset"></select>
+                </label>
+                <label class="range-control">
+                    <span>Repeats</span>
+                    <input type="range" min="1" max="5" value="1" id="playback-repeats">
+                    <span class="range-value" id="playback-repeats-label">1×</span>
+                </label>
+                <label class="range-control">
+                    <span>Intra-repeat spacing</span>
+                    <input type="range" min="180" max="1200" value="420" id="playback-spacing">
+                    <span class="range-value" id="playback-spacing-label">420 ms</span>
+                </label>
+                <label class="range-control">
+                    <span>Broadcast gain</span>
+                    <input type="range" min="30" max="100" value="70" id="playback-gain">
+                    <span class="range-value" id="playback-gain-label">70%</span>
+                </label>
+            </div>
+            <div class="playback-actions">
+                <button id="playback-play" class="btn primary">Broadcast Sequence</button>
+                <button id="playback-stop" class="btn ghost">Stop Broadcast</button>
+            </div>
+            <p id="playback-description" class="playback-description"></p>
+            <p class="playback-note">Playback automatically mutes live classification until the broadcast finishes, preventing self-triggered translations.</p>
+        </section>
+
+        <section class="panel wide">
+            <header class="panel-header">
+                <h2>Call Knowledge Base</h2>
+            </header>
+            <div class="card-grid" id="knowledge-cards"></div>
+        </section>
+
+        <section class="panel wide references">
+            <header class="panel-header">
+                <h2>Research References &amp; Notes</h2>
+            </header>
+            <ul class="reference-list">
+                <li>Cornell Lab of Ornithology. <em>Birds of the World: American Crow (Corvus brachyrhynchos).</em></li>
+                <li>Verbeek, N. A. M., &amp; Caffrey, C. (2002). <em>American crow (Corvus brachyrhynchos).</em> The Birds of North America.</li>
+                <li>Kilham, L. (1989). <em>The American Crow and the Common Raven.</em> W.W. Norton.</li>
+                <li>Marzluff, J.M., &amp; Angell, T. (2005). <em>In the Company of Crows and Ravens.</em> Yale University Press.</li>
+                <li>Marzluff, J.M., &amp; Heinrich, B. (1991). Foraging by common ravens in unkindness. <em>The Condor.</em></li>
+            </ul>
+            <p class="disclaimer">Interpretations are heuristic approximations derived from published acoustic ranges. Always corroborate with direct field observations and context.</p>
+        </section>
+    </main>
+
+    <script src="app.js" type="module"></script>
+</body>
+</html>
+
+
+
+
+
